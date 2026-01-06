@@ -15,9 +15,11 @@ import {
   XCircle, 
   Calendar as CalendarIcon,
   TrendingUp,
-  Loader2
+  Loader2,
+  User,
+  Users
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 
 const Attendance: React.FC = () => {
   const { user, role } = useAuth();
@@ -27,7 +29,7 @@ const Attendance: React.FC = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const isAdminOrHR = role === 'admin' || role === 'hr';
 
-  const targetUserId = selectedEmployee || user?.id;
+  const targetUserId = isAdminOrHR && selectedEmployee ? selectedEmployee : user?.id;
 
   // Fetch attendance for the month
   const { data: attendanceData, isLoading } = useQuery({
@@ -51,15 +53,30 @@ const Attendance: React.FC = () => {
 
   // Fetch employees for admin
   const { data: employees } = useQuery({
-    queryKey: ['employees'],
+    queryKey: ['employees-attendance'],
     queryFn: async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, employee_id')
-        .eq('is_active', true);
+        .select('id, first_name, last_name, employee_id, department')
+        .eq('is_active', true)
+        .order('first_name');
       return data || [];
     },
     enabled: isAdminOrHR,
+  });
+
+  // Fetch selected employee profile
+  const { data: selectedEmployeeProfile } = useQuery({
+    queryKey: ['employee-profile', targetUserId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', targetUserId)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!targetUserId && isAdminOrHR,
   });
 
   // Today's attendance
@@ -80,6 +97,8 @@ const Attendance: React.FC = () => {
     onSuccess: () => {
       toast({ title: 'Checked In', description: 'Your attendance has been recorded.' });
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['today-attendance-details'] });
+      queryClient.invalidateQueries({ queryKey: ['today-attendance-all'] });
     },
     onError: (error: Error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -109,6 +128,8 @@ const Attendance: React.FC = () => {
     onSuccess: () => {
       toast({ title: 'Checked Out', description: 'Your attendance has been updated.' });
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['today-attendance-details'] });
+      queryClient.invalidateQueries({ queryKey: ['today-attendance-all'] });
     },
     onError: (error: Error) => {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -143,6 +164,7 @@ const Attendance: React.FC = () => {
   const presentDays = attendanceData?.filter(a => a.status === 'present').map(a => new Date(a.date)) || [];
   const absentDays = attendanceData?.filter(a => a.status === 'absent').map(a => new Date(a.date)) || [];
   const leaveDays = attendanceData?.filter(a => a.status === 'leave').map(a => new Date(a.date)) || [];
+  const halfDays = attendanceData?.filter(a => a.status === 'half_day').map(a => new Date(a.date)) || [];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -153,10 +175,12 @@ const Attendance: React.FC = () => {
         </div>
         {isAdminOrHR && (
           <Select value={selectedEmployee || ''} onValueChange={setSelectedEmployee}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select employee" />
+            <SelectTrigger className="w-72">
+              <Users className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Select employee to view attendance" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="">My Attendance</SelectItem>
               {employees?.map((emp) => (
                 <SelectItem key={emp.id} value={emp.id}>
                   {emp.first_name} {emp.last_name} ({emp.employee_id})
@@ -167,8 +191,27 @@ const Attendance: React.FC = () => {
         )}
       </div>
 
-      {/* Quick Check-in/out for employees */}
-      {!isAdminOrHR && (
+      {/* Selected Employee Info (for HR) */}
+      {isAdminOrHR && selectedEmployee && selectedEmployeeProfile && (
+        <Card className="shadow-soft bg-primary/5 border-primary/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                {selectedEmployeeProfile.first_name?.[0]}{selectedEmployeeProfile.last_name?.[0]}
+              </div>
+              <div>
+                <h3 className="font-semibold">{selectedEmployeeProfile.first_name} {selectedEmployeeProfile.last_name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {selectedEmployeeProfile.designation} • {selectedEmployeeProfile.department} • {selectedEmployeeProfile.employee_id}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Quick Check-in/out for employees (only show for own attendance) */}
+      {(!isAdminOrHR || !selectedEmployee) && (
         <Card className="shadow-soft">
           <CardHeader>
             <CardTitle>Today's Attendance</CardTitle>
@@ -190,6 +233,11 @@ const Attendance: React.FC = () => {
                       : 'Not checked in yet'
                     }
                   </p>
+                  {todayAttendance?.check_out && (
+                    <p className="text-sm text-muted-foreground">
+                      Checked out at {new Date(todayAttendance.check_out).toLocaleTimeString()}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3">
@@ -198,6 +246,7 @@ const Attendance: React.FC = () => {
                     onClick={() => checkInMutation.mutate()} 
                     className="gap-2"
                     disabled={checkInMutation.isPending}
+                    size="lg"
                   >
                     {checkInMutation.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -212,6 +261,7 @@ const Attendance: React.FC = () => {
                     variant="secondary" 
                     className="gap-2"
                     disabled={checkOutMutation.isPending}
+                    size="lg"
                   >
                     {checkOutMutation.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -222,9 +272,9 @@ const Attendance: React.FC = () => {
                   </Button>
                 ) : (
                   <div className="text-center">
-                    <Badge className="bg-success text-success-foreground">Day Complete</Badge>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {todayAttendance.total_hours?.toFixed(1)} hours
+                    <Badge className="bg-success text-success-foreground text-base px-4 py-2">Day Complete</Badge>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Total: {todayAttendance.total_hours?.toFixed(1)} hours
                     </p>
                   </div>
                 )}
@@ -235,7 +285,7 @@ const Attendance: React.FC = () => {
       )}
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card className="shadow-soft">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -244,7 +294,20 @@ const Attendance: React.FC = () => {
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.present}</p>
-                <p className="text-sm text-muted-foreground">Present Days</p>
+                <p className="text-sm text-muted-foreground">Present</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-soft">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-warning/10">
+                <Clock className="h-5 w-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{stats.halfDay}</p>
+                <p className="text-sm text-muted-foreground">Half Days</p>
               </div>
             </div>
           </CardContent>
@@ -257,7 +320,7 @@ const Attendance: React.FC = () => {
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.absent}</p>
-                <p className="text-sm text-muted-foreground">Absent Days</p>
+                <p className="text-sm text-muted-foreground">Absent</p>
               </div>
             </div>
           </CardContent>
@@ -295,6 +358,7 @@ const Attendance: React.FC = () => {
         <Card className="shadow-soft">
           <CardHeader>
             <CardTitle>Calendar View</CardTitle>
+            <CardDescription>{format(selectedMonth, 'MMMM yyyy')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Calendar
@@ -306,17 +370,23 @@ const Attendance: React.FC = () => {
                 present: presentDays,
                 absent: absentDays,
                 leave: leaveDays,
+                halfDay: halfDays,
               }}
               modifiersStyles={{
                 present: { backgroundColor: 'hsl(var(--success) / 0.2)', color: 'hsl(var(--success))' },
                 absent: { backgroundColor: 'hsl(var(--destructive) / 0.2)', color: 'hsl(var(--destructive))' },
                 leave: { backgroundColor: 'hsl(var(--info) / 0.2)', color: 'hsl(var(--info))' },
+                halfDay: { backgroundColor: 'hsl(var(--warning) / 0.2)', color: 'hsl(var(--warning))' },
               }}
             />
-            <div className="flex justify-center gap-4 mt-4 text-sm">
+            <div className="flex flex-wrap justify-center gap-4 mt-4 text-sm">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-success" />
                 <span>Present</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full bg-warning" />
+                <span>Half Day</span>
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-destructive" />
@@ -334,7 +404,7 @@ const Attendance: React.FC = () => {
           <CardHeader>
             <CardTitle>Attendance Records</CardTitle>
             <CardDescription>
-              {format(selectedMonth, 'MMMM yyyy')}
+              {format(selectedMonth, 'MMMM yyyy')} - Day wise breakdown
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -343,42 +413,44 @@ const Attendance: React.FC = () => {
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>
             ) : attendanceData && attendanceData.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Check In</TableHead>
-                    <TableHead>Check Out</TableHead>
-                    <TableHead>Hours</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {attendanceData.map((record) => (
-                    <TableRow key={record.id}>
-                      <TableCell className="font-medium">
-                        {format(new Date(record.date), 'EEE, MMM d')}
-                      </TableCell>
-                      <TableCell>
-                        {record.check_in 
-                          ? new Date(record.check_in).toLocaleTimeString()
-                          : '-'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        {record.check_out 
-                          ? new Date(record.check_out).toLocaleTimeString()
-                          : '-'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        {record.total_hours ? `${record.total_hours.toFixed(1)}h` : '-'}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(record.status)}</TableCell>
+              <div className="max-h-[400px] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Check In</TableHead>
+                      <TableHead>Check Out</TableHead>
+                      <TableHead>Hours</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {attendanceData.map((record) => (
+                      <TableRow key={record.id}>
+                        <TableCell className="font-medium">
+                          {format(new Date(record.date), 'EEE, MMM d')}
+                        </TableCell>
+                        <TableCell>
+                          {record.check_in 
+                            ? new Date(record.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : '-'
+                          }
+                        </TableCell>
+                        <TableCell>
+                          {record.check_out 
+                            ? new Date(record.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : '-'
+                          }
+                        </TableCell>
+                        <TableCell>
+                          {record.total_hours ? `${record.total_hours.toFixed(1)}h` : '-'}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(record.status)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
