@@ -16,55 +16,68 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
-  ArrowRight
+  ArrowRight,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
 
 const AdminDashboard: React.FC = () => {
-  // Fetch employee count
-  const { data: employeeCount } = useQuery({
-    queryKey: ['employee-count'],
+  const today = new Date().toISOString().split('T')[0];
+
+  // Fetch all active employees
+  const { data: allEmployees } = useQuery({
+    queryKey: ['all-active-employees'],
     queryFn: async () => {
-      const { count } = await supabase
+      const { data } = await supabase
         .from('profiles')
-        .select('*', { count: 'exact', head: true })
+        .select('*')
         .eq('is_active', true);
-      return count || 0;
+      return data || [];
     },
   });
 
-  // Fetch today's attendance summary
+  const employeeCount = allEmployees?.length || 0;
+
+  // Fetch today's attendance with employee details
   const { data: todayAttendance } = useQuery({
-    queryKey: ['today-attendance-summary'],
+    queryKey: ['today-attendance-details'],
     queryFn: async () => {
-      const today = new Date().toISOString().split('T')[0];
       const { data } = await supabase
         .from('attendance')
-        .select('status')
+        .select(`
+          *,
+          profiles:user_id (id, first_name, last_name, employee_id, department, designation)
+        `)
         .eq('date', today);
-      
-      const present = data?.filter(a => a.status === 'present').length || 0;
-      const absent = (employeeCount || 0) - present;
-      return { present, absent, total: data?.length || 0 };
+      return data || [];
     },
+    refetchInterval: 30000, // Refetch every 30 seconds for real-time updates
   });
 
-  // Fetch pending leave requests
+  // Calculate present and absent employees
+  const presentEmployees = todayAttendance?.filter(a => a.status === 'present' || a.status === 'half_day') || [];
+  const presentEmployeeIds = new Set(todayAttendance?.map(a => a.user_id) || []);
+  const absentEmployees = allEmployees?.filter(emp => !presentEmployeeIds.has(emp.id)) || [];
+
+  // Fetch pending leave requests with employee details
   const { data: pendingLeaves } = useQuery({
-    queryKey: ['pending-leaves'],
+    queryKey: ['pending-leaves-dashboard'],
     queryFn: async () => {
       const { data, count } = await supabase
         .from('leave_requests')
         .select(`
           *,
-          profiles:user_id (first_name, last_name, department)
+          profiles:user_id (first_name, last_name, department, designation, employee_id)
         `, { count: 'exact' })
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(5);
       return { data: data || [], count: count || 0 };
     },
+    refetchInterval: 30000,
   });
 
   // Fetch recent employees
@@ -83,18 +96,18 @@ const AdminDashboard: React.FC = () => {
   const stats = [
     {
       title: 'Total Employees',
-      value: employeeCount || 0,
+      value: employeeCount,
       icon: Users,
-      trend: '+5%',
+      trend: `${employeeCount} active`,
       trendUp: true,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
     },
     {
       title: 'Present Today',
-      value: todayAttendance?.present || 0,
-      icon: CheckCircle2,
-      trend: `${Math.round(((todayAttendance?.present || 0) / (employeeCount || 1)) * 100)}%`,
+      value: presentEmployees.length,
+      icon: UserCheck,
+      trend: `${Math.round((presentEmployees.length / (employeeCount || 1)) * 100)}% attendance`,
       trendUp: true,
       color: 'text-success',
       bgColor: 'bg-success/10',
@@ -110,9 +123,9 @@ const AdminDashboard: React.FC = () => {
     },
     {
       title: 'Absent Today',
-      value: todayAttendance?.absent || 0,
-      icon: XCircle,
-      trend: `${Math.round(((todayAttendance?.absent || 0) / (employeeCount || 1)) * 100)}%`,
+      value: absentEmployees.length,
+      icon: UserX,
+      trend: `${Math.round((absentEmployees.length / (employeeCount || 1)) * 100)}% absent`,
       trendUp: false,
       color: 'text-destructive',
       bgColor: 'bg-destructive/10',
@@ -188,103 +201,203 @@ const AdminDashboard: React.FC = () => {
         </Link>
       </div>
 
-      {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Pending Leave Requests */}
+      {/* Main Content - 3 Column Layout */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Present Employees */}
         <Card className="shadow-soft">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
             <div>
-              <CardTitle>Pending Leave Requests</CardTitle>
-              <CardDescription>Requests awaiting your approval</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-success" />
+                Present Today
+              </CardTitle>
+              <CardDescription>{presentEmployees.length} employees checked in</CardDescription>
             </div>
-            <Link to="/leave-approvals">
-              <Button variant="ghost" size="sm" className="gap-1">
-                View All <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
           </CardHeader>
           <CardContent>
-            {pendingLeaves?.data && pendingLeaves.data.length > 0 ? (
-              <div className="space-y-3">
-                {pendingLeaves.data.map((leave: any) => (
-                  <div key={leave.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium">
-                        {leave.profiles?.first_name?.[0]}{leave.profiles?.last_name?.[0]}
+            {presentEmployees.length > 0 ? (
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {presentEmployees.slice(0, 6).map((attendance: any) => (
+                  <div key={attendance.id} className="flex items-center justify-between p-2 bg-success/5 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-success/10 flex items-center justify-center text-success text-xs font-medium">
+                        {attendance.profiles?.first_name?.[0]}{attendance.profiles?.last_name?.[0]}
                       </div>
                       <div>
-                        <p className="font-medium">
-                          {leave.profiles?.first_name} {leave.profiles?.last_name}
+                        <p className="text-sm font-medium">
+                          {attendance.profiles?.first_name} {attendance.profiles?.last_name}
                         </p>
-                        <p className="text-sm text-muted-foreground capitalize">
-                          {leave.leave_type} Leave • {leave.profiles?.department}
+                        <p className="text-xs text-muted-foreground">
+                          {attendance.check_in && format(new Date(attendance.check_in), 'h:mm a')}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">
-                        {new Date(leave.start_date).toLocaleDateString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        to {new Date(leave.end_date).toLocaleDateString()}
-                      </p>
-                    </div>
+                    <Badge className="bg-success/10 text-success text-xs">
+                      {attendance.status === 'half_day' ? 'Half Day' : 'Present'}
+                    </Badge>
                   </div>
                 ))}
+                {presentEmployees.length > 6 && (
+                  <p className="text-xs text-muted-foreground text-center pt-2">
+                    +{presentEmployees.length - 6} more employees
+                  </p>
+                )}
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No pending leave requests</p>
+              <div className="text-center py-6 text-muted-foreground">
+                <UserCheck className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No check-ins yet</p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Recent Employees */}
+        {/* Absent Employees */}
         <Card className="shadow-soft">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
             <div>
-              <CardTitle>Recent Employees</CardTitle>
-              <CardDescription>Newly joined team members</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserX className="h-4 w-4 text-destructive" />
+                Absent Today
+              </CardTitle>
+              <CardDescription>{absentEmployees.length} employees not checked in</CardDescription>
             </div>
-            <Link to="/employees">
-              <Button variant="ghost" size="sm" className="gap-1">
-                View All <ArrowRight className="h-4 w-4" />
+          </CardHeader>
+          <CardContent>
+            {absentEmployees.length > 0 ? (
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {absentEmployees.slice(0, 6).map((employee) => (
+                  <div key={employee.id} className="flex items-center justify-between p-2 bg-destructive/5 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center text-destructive text-xs font-medium">
+                        {employee.first_name?.[0]}{employee.last_name?.[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">
+                          {employee.first_name} {employee.last_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {employee.department || 'No department'}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant="destructive" className="text-xs">Absent</Badge>
+                  </div>
+                ))}
+                {absentEmployees.length > 6 && (
+                  <p className="text-xs text-muted-foreground text-center pt-2">
+                    +{absentEmployees.length - 6} more employees
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50 text-success" />
+                <p className="text-sm">All employees present!</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pending Leave Requests */}
+        <Card className="shadow-soft">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-warning" />
+                Pending Leaves
+              </CardTitle>
+              <CardDescription>{pendingLeaves?.count || 0} requests awaiting approval</CardDescription>
+            </div>
+            <Link to="/leave-approvals">
+              <Button variant="ghost" size="sm" className="gap-1 text-xs">
+                View All <ArrowRight className="h-3 w-3" />
               </Button>
             </Link>
           </CardHeader>
           <CardContent>
-            {recentEmployees && recentEmployees.length > 0 ? (
-              <div className="space-y-3">
-                {recentEmployees.map((employee) => (
+            {pendingLeaves?.data && pendingLeaves.data.length > 0 ? (
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {pendingLeaves.data.map((leave: any) => (
+                  <div key={leave.id} className="flex items-center justify-between p-2 bg-warning/5 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-warning/10 flex items-center justify-center text-warning text-xs font-medium">
+                        {leave.profiles?.first_name?.[0]}{leave.profiles?.last_name?.[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">
+                          {leave.profiles?.first_name} {leave.profiles?.last_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {leave.leave_type} • {format(new Date(leave.start_date), 'MMM d')}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">Pending</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No pending requests</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Employees */}
+      <Card className="shadow-soft">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Recent Employees</CardTitle>
+            <CardDescription>Newly joined team members</CardDescription>
+          </div>
+          <Link to="/employees">
+            <Button variant="ghost" size="sm" className="gap-1">
+              View All <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </CardHeader>
+        <CardContent>
+          {recentEmployees && recentEmployees.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+              {recentEmployees.map((employee) => {
+                const isPresent = presentEmployeeIds.has(employee.id);
+                return (
                   <div key={employee.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium">
                         {employee.first_name?.[0]}{employee.last_name?.[0]}
                       </div>
                       <div>
-                        <p className="font-medium">
+                        <p className="font-medium text-sm">
                           {employee.first_name} {employee.last_name}
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          {employee.designation || 'N/A'} • {employee.department || 'N/A'}
+                        <p className="text-xs text-muted-foreground">
+                          {employee.designation || 'N/A'}
                         </p>
+                        <Badge 
+                          variant="secondary" 
+                          className={`text-xs mt-1 ${isPresent ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}
+                        >
+                          {isPresent ? 'Present' : 'Absent'}
+                        </Badge>
                       </div>
                     </div>
-                    <Badge variant="secondary">{employee.employee_id}</Badge>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No employees found</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No employees found</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
