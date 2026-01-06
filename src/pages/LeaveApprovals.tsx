@@ -19,15 +19,18 @@ import {
   Loader2,
   Calendar,
   User,
-  Clock
+  Clock,
+  Search
 } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
+import { Input } from '@/components/ui/input';
 
 const LeaveApprovals: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('pending');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [reviewComment, setReviewComment] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -53,9 +56,25 @@ const LeaveApprovals: React.FC = () => {
     },
   });
 
+  // Filter by search
+  const filteredRequests = leaveRequests?.filter((request: any) => {
+    const fullName = `${request.profiles?.first_name} ${request.profiles?.last_name}`.toLowerCase();
+    const employeeId = request.profiles?.employee_id?.toLowerCase() || '';
+    return fullName.includes(searchQuery.toLowerCase()) || 
+           employeeId.includes(searchQuery.toLowerCase());
+  });
+
   const reviewLeaveMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => {
-      const { error } = await supabase
+    mutationFn: async ({ id, status, userId, leaveType, startDate, endDate }: { 
+      id: string; 
+      status: 'approved' | 'rejected';
+      userId: string;
+      leaveType: string;
+      startDate: string;
+      endDate: string;
+    }) => {
+      // Update leave request status
+      const { error: updateError } = await supabase
         .from('leave_requests')
         .update({
           status,
@@ -64,14 +83,90 @@ const LeaveApprovals: React.FC = () => {
           review_comments: reviewComment,
         })
         .eq('id', id);
-      if (error) throw error;
+      
+      if (updateError) throw updateError;
+
+      // If approved, deduct from leave balance
+      if (status === 'approved') {
+        const days = differenceInDays(new Date(endDate), new Date(startDate)) + 1;
+        
+        // Get current leave balance
+        const { data: balance } = await supabase
+          .from('leave_balance')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (balance) {
+          const leaveColumn = `${leaveType}_leave` as 'paid_leave' | 'sick_leave' | 'casual_leave' | 'unpaid_leave';
+          const currentBalance = (balance as any)[leaveColumn] || 0;
+          const newBalance = Math.max(0, currentBalance - days);
+
+          const { error: balanceError } = await supabase
+            .from('leave_balance')
+            .update({ [leaveColumn]: newBalance })
+            .eq('user_id', userId);
+
+          if (balanceError) throw balanceError;
+        }
+
+        // Mark attendance as leave for those days
+        const startDateObj = new Date(startDate);
+        const endDateObj = new Date(endDate);
+        
+        for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
+          const dateStr = d.toISOString().split('T')[0];
+          
+          // Check if attendance record exists
+          const { data: existing } = await supabase
+            .from('attendance')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('date', dateStr)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase
+              .from('attendance')
+              .update({ status: 'leave' })
+              .eq('id', existing.id);
+          } else {
+            await supabase
+              .from('attendance')
+              .insert({
+                user_id: userId,
+                date: dateStr,
+                status: 'leave',
+              });
+          }
+        }
+      }
+
+      // Create notification for the employee
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          title: `Leave Request ${status === 'approved' ? 'Approved' : 'Rejected'}`,
+          message: status === 'approved' 
+            ? `Your ${leaveType} leave request from ${format(new Date(startDate), 'MMM d')} to ${format(new Date(endDate), 'MMM d')} has been approved.${reviewComment ? ` Comment: ${reviewComment}` : ''}`
+            : `Your ${leaveType} leave request from ${format(new Date(startDate), 'MMM d')} to ${format(new Date(endDate), 'MMM d')} has been rejected.${reviewComment ? ` Reason: ${reviewComment}` : ''}`,
+          type: status === 'approved' ? 'success' : 'error',
+        });
+
+      if (notifError) console.error('Notification error:', notifError);
     },
     onSuccess: (_, { status }) => {
       toast({ 
         title: `Leave ${status === 'approved' ? 'Approved' : 'Rejected'}`, 
-        description: 'The leave request has been updated.' 
+        description: status === 'approved' 
+          ? 'The leave has been approved and balance updated.' 
+          : 'The leave request has been rejected.'
       });
       queryClient.invalidateQueries({ queryKey: ['all-leave-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['leave-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-leaves'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-leaves-dashboard'] });
       setIsDialogOpen(false);
       setReviewComment('');
       setSelectedRequest(null);
@@ -111,6 +206,30 @@ const LeaveApprovals: React.FC = () => {
     setIsDialogOpen(true);
   };
 
+  const handleApprove = () => {
+    if (!selectedRequest) return;
+    reviewLeaveMutation.mutate({
+      id: selectedRequest.id,
+      status: 'approved',
+      userId: selectedRequest.user_id,
+      leaveType: selectedRequest.leave_type,
+      startDate: selectedRequest.start_date,
+      endDate: selectedRequest.end_date,
+    });
+  };
+
+  const handleReject = () => {
+    if (!selectedRequest) return;
+    reviewLeaveMutation.mutate({
+      id: selectedRequest.id,
+      status: 'rejected',
+      userId: selectedRequest.user_id,
+      leaveType: selectedRequest.leave_type,
+      startDate: selectedRequest.start_date,
+      endDate: selectedRequest.end_date,
+    });
+  };
+
   const pendingCount = leaveRequests?.filter(r => r.status === 'pending').length || 0;
 
   return (
@@ -127,20 +246,37 @@ const LeaveApprovals: React.FC = () => {
               {pendingCount} Pending
             </Badge>
           )}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Requests</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
+
+      {/* Filters */}
+      <Card className="shadow-soft">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by employee name or ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-40">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Requests</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Leave Requests Table */}
       <Card className="shadow-soft">
@@ -149,7 +285,7 @@ const LeaveApprovals: React.FC = () => {
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-          ) : leaveRequests && leaveRequests.length > 0 ? (
+          ) : filteredRequests && filteredRequests.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -164,7 +300,7 @@ const LeaveApprovals: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {leaveRequests.map((request: any) => (
+                {filteredRequests.map((request: any) => (
                   <TableRow key={request.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -202,24 +338,13 @@ const LeaveApprovals: React.FC = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       {request.status === 'pending' ? (
-                        <div className="flex justify-end gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="ghost" 
-                            className="text-success hover:text-success hover:bg-success/10"
-                            onClick={() => handleReview(request)}
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => handleReview(request)}
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleReview(request)}
+                        >
+                          Review
+                        </Button>
                       ) : (
                         <span className="text-sm text-muted-foreground">
                           {request.reviewed_at 
@@ -244,7 +369,7 @@ const LeaveApprovals: React.FC = () => {
 
       {/* Review Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Review Leave Request</DialogTitle>
             <DialogDescription>
@@ -309,16 +434,13 @@ const LeaveApprovals: React.FC = () => {
               </div>
             </div>
           )}
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
             <Button 
               variant="destructive"
-              onClick={() => reviewLeaveMutation.mutate({ 
-                id: selectedRequest?.id, 
-                status: 'rejected' 
-              })}
+              onClick={handleReject}
               disabled={reviewLeaveMutation.isPending}
             >
               {reviewLeaveMutation.isPending ? (
@@ -330,10 +452,7 @@ const LeaveApprovals: React.FC = () => {
             </Button>
             <Button 
               className="bg-success hover:bg-success/90"
-              onClick={() => reviewLeaveMutation.mutate({ 
-                id: selectedRequest?.id, 
-                status: 'approved' 
-              })}
+              onClick={handleApprove}
               disabled={reviewLeaveMutation.isPending}
             >
               {reviewLeaveMutation.isPending ? (
