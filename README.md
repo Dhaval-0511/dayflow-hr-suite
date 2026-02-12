@@ -1,73 +1,110 @@
-# Welcome to your Lovable project
-
-## Project info
-
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
-
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Dayflow - Human Resource Management System 
+Every workday, perfectly aligned. 
+1. Introduction
+1.1 Purpose 
+The purpose of this document is to define the functional and non-functional requirements 
+of a Human Resource Management System HRMS. The system aims to digitize and 
+streamline core HR operations such as employee onboarding, profile management, 
+attendance tracking, leave management, payroll visibility, and approval workflows for 
+admins and HR officers. 
+1.2 Scope 
+The HRMS will provide: 
+● Secure authentication Sign Up / Sign In) 
+● Role-based access Admin vs Employee) 
+● Employee profile management 
+● Attendance tracking (daily/weekly view) 
+● Leave and time-off management 
+● Approval workflows for HR/Admin 
+1.3 Definitions & Abbreviations 
+● Admin / HR Officer: User with management and approval privileges 
+● Employee: Regular user with limited access 
+● Time-Off: Paid leave, sick leave, unpaid leave, etc. 
+2. User Classes and Characteristics
+User Type 
+Description 
+Admin / HR 
+Officer 
+Employee 
+Manages employees, approves leave & attendance, views payroll 
+details 
+Views personal profile, attendance, applies for leave, views salary 
+details 
+3. Functional Requirements
+3.1 Authentication & Authorization 
+3.1.1 Sign Up 
+● Users can register using: 
+○ Employee ID 
+○ Email 
+○ Password 
+○ Role Employee / HR 
+● Password must follow security rules. 
+● Email verification is required. 
+3.1.2 Sign In 
+● Users can log in using email and password. 
+● Incorrect credentials should display error messages. 
+● Successful login redirects to the dashboard. 
+3.2 Dashboard 
+3.2.1 Employee Dashboard 
+● Displays quick-access cards: 
+○ Profile 
+○ Attendance 
+○ Leave Requests 
+○ Logout 
+● Shows recent activity or alerts. 
+3.2.2 Admin / HR Dashboard 
+● Displays: 
+○ Employee list 
+○ Attendance records 
+○ Leave approvals 
+● Ability to switch between employees. 
+3.3 Employee Profile Management 
+3.3.1 View Profile 
+● Employees can view: 
+○ Personal details 
+○ Job details 
+○ Salary structure 
+○ Documents 
+○ Profile picture 
+3.3.2 Edit Profile 
+● Employees can edit limited fields (address, phone, profile picture). 
+● Admin can edit all employee details. 
+3.4 Attendance Management 
+3.4.1 Attendance Tracking 
+● Daily and weekly attendance views. 
+● Option for check-in/check-out for employee 
+● Status types: 
+○ Present 
+○ Absent 
+○ Half-day 
+○ Leave 
+3.4.2 Attendance View 
+● Employees can view only their own attendance. 
+● Admin/HR can view attendance of all employees. 
+3.5 Leave & Time-Off Management 
+3.5.1 Apply for Leave Employee) 
+● Employees can: 
+○ Select leave type Paid, Sick, Unpaid) 
+○ Choose date range 
+○ Add remarks 
+● Leave request status: 
+○ Pending 
+○ Approved 
+○ Rejected 
+3.5.2 Leave Approval Admin/HR 
+● Admin can: 
+○ View all leave requests 
+○ Approve or reject requests 
+○ Add comments 
+● Changes reflect immediately in employee records. 
+3.6 Payroll/Salary Management 
+3.6.1 Employee Payroll View 
+● Payroll data is read-only for employees. 
+3.6.2 Admin Payroll Control 
+● Admin can: 
+○ View payroll of all employees 
+○ Update salary structure 
+○ Ensure payroll accuracy 
+6. Future Enhancements
+● Email & notification alerts 
+● Analytics & reports dashboard( reports like, salary slips or attendance ) 
+Excalidraw: https://link.excalidraw.com/l/65VNwvy7c4X/58RLEJ4oOwh 
