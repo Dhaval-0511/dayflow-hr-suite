@@ -1,0 +1,216 @@
+// This is your Prisma schema file for Dayflow HRMS
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Companies ────────────────────────────────────────────────────────────────
+model Company {
+  id           String     @id @default(uuid())
+  name         String
+  abbreviation String?
+  logo         String?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  employees    Employee[]
+
+  @@map("companies")
+}
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+model Employee {
+  id               String    @id @default(uuid())
+  companyId        String
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  loginId          String    @unique
+  email            String    @unique
+  passwordHash     String
+  role             Role      @default(EMPLOYEE)
+
+  firstName        String
+  lastName         String
+  avatar           String?   // Cloudinary URL
+  jobPosition      String?
+  department       String?
+  managerId        String?
+  manager          Employee? @relation("ManagerSubordinates", fields: [managerId], references: [id])
+  subordinates     Employee[] @relation("ManagerSubordinates")
+  location         String?
+  phone            String?
+  yearOfJoining    Int?
+  serialNumber     Int?
+  dateOfBirth      String?
+  residingAddress  String?
+  nationality      String?
+  personalEmail    String?
+  gender           String?
+  maritalStatus    String?
+  dateOfJoining    String?
+  empCode          String?
+
+  // Bank Details
+  accountNumber    String?
+  bankName         String?
+  ifscCode         String?
+  panNo            String?
+  uanNo            String?
+
+  // Profile extras
+  about            String?
+  whatILove        String?
+  hobbies          String?
+  skills           String[]  @default([])
+  certifications   String[]  @default([])
+
+  // Payroll
+  monthlyWage      Decimal   @default(0) @db.Decimal(12, 2)
+  workingDaysPerWeek Int     @default(5)
+  breakTimeHrs     Decimal   @default(1) @db.Decimal(4, 2)
+
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+
+  // Relations
+  attendance       Attendance[]
+  leaveRequests    LeaveRequest[]
+  leaveAllocation  LeaveAllocation?
+  notifications    Notification[]
+  payslips         Payslip[]
+  auditLogsBy      AuditLog[]  @relation("AuditLogActor")
+
+  @@map("employees")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  HR
+  EMPLOYEE
+}
+
+// ─── Attendance ───────────────────────────────────────────────────────────────
+model Attendance {
+  id          String           @id @default(uuid())
+  employeeId  String
+  employee    Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime         @db.Date
+  checkIn     String?
+  checkOut    String?
+  workHours   Decimal?         @db.Decimal(5, 2)
+  extraHours  Decimal?         @db.Decimal(5, 2)
+  status      AttendanceStatus @default(ABSENT)
+
+  @@unique([employeeId, date])
+  @@map("attendance")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LEAVE
+  HALF_DAY
+}
+
+// ─── Leave Requests ───────────────────────────────────────────────────────────
+model LeaveRequest {
+  id           String      @id @default(uuid())
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType    LeaveType
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  remarks      String?
+  attachment   String?     // Cloudinary URL
+  status       LeaveStatus @default(PENDING)
+  adminComment String?
+  createdAt    DateTime    @default(now())
+
+  @@map("leave_requests")
+}
+
+enum LeaveType {
+  PAID_LEAVE
+  SICK_LEAVE
+  UNPAID_LEAVE
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ─── Leave Allocations ────────────────────────────────────────────────────────
+model LeaveAllocation {
+  id           String   @id @default(uuid())
+  employeeId   String   @unique
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  paidLeave    Int      @default(24)
+  sickLeave    Int      @default(7)
+  unpaidLeave  Int      @default(999)
+
+  @@map("leave_allocations")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  user       Employee         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  message    String
+  type       NotificationType @default(INFO)
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+// ─── Payslips ─────────────────────────────────────────────────────────────────
+model Payslip {
+  id          String   @id @default(uuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month       Int      // 1-12
+  year        Int
+  monthlyWage Decimal  @db.Decimal(12, 2)
+  basic       Decimal  @db.Decimal(12, 2)
+  hra         Decimal  @db.Decimal(12, 2)
+  pfEmployee  Decimal  @db.Decimal(12, 2)
+  pfEmployer  Decimal  @db.Decimal(12, 2)
+  netPay      Decimal  @db.Decimal(12, 2)
+  pdfUrl      String?  // Cloudinary URL of generated PDF
+  generatedAt DateTime @default(now())
+
+  @@unique([employeeId, month, year])
+  @@map("payslips")
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  actor     Employee @relation("AuditLogActor", fields: [actorId], references: [id])
+  action    String   // e.g. "UPDATE_SALARY", "APPROVE_LEAVE", "DELETE_EMPLOYEE"
+  entity    String   // e.g. "Employee", "LeaveRequest"
+  entityId  String
+  oldValue  Json?
+  newValue  Json?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
