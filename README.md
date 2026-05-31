@@ -1,194 +1,225 @@
-# DayFlow – Human Resource Management System 💼
+# 🗓️ Dayflow HRMS — Human Resource Management System
 
-**“Every workday, perfectly aligned.”**
+> Every workday, perfectly aligned.
 
-DayFlow is a role-based Human Resource Management System (HRMS) designed to digitize and streamline core HR operations including employee management, attendance tracking, leave workflows, and payroll visibility.
-
----
-
-## 📌 Problem Statement
-
-Many small and mid-sized organizations rely on spreadsheets and disconnected tools to manage HR operations.  
-This leads to:
-
-- Manual errors in attendance and payroll
-- Delayed leave approvals
-- Lack of centralized employee data
-- Poor transparency between HR and employees
-
-DayFlow solves this by providing a centralized, structured, and permission-controlled HR platform.
+A full-stack HRMS built with **React + TypeScript** (frontend) and **Node.js + Express + PostgreSQL** (backend).
 
 ---
 
-## 💡 Solution Overview
+## 🚀 Quick Start
 
-DayFlow provides:
-
-- Secure authentication system
-- Role-based dashboards (Admin vs Employee)
-- Attendance tracking with status control
-- Structured leave approval workflows
-- Controlled payroll visibility
-- Employee profile management
-
-The system ensures strict access control while maintaining usability for both HR and employees.
+### Prerequisites
+- Node.js 18+
+- PostgreSQL 14+
+- npm
 
 ---
 
-## 🏗️ System Architecture
+### 1. Database Setup
 
-### 🔐 Authentication & Authorization
-- Sign Up using Employee ID, Email, Password, Role
-- Email verification required
-- Secure login with error handling
-- Role-based access control (RBAC)
+```bash
+# Option A: Using psql as postgres superuser
+psql -U postgres -f scripts/create_db.sql
 
----
-
-## 👥 User Roles
-
-### Admin / HR Officer
-- Manage employee records
-- Approve/reject leave requests
-- View all attendance records
-- Update payroll structures
-- Monitor organization-wide data
-
-### Employee
-- View and update profile (limited fields)
-- Check-in / Check-out attendance
-- Apply for leave
-- View salary details (read-only)
+# Option B: Manual
+psql -U postgres
+CREATE USER hrms_user WITH PASSWORD 'hrms_pass';
+CREATE DATABASE hrms_db OWNER hrms_user;
+GRANT ALL PRIVILEGES ON DATABASE hrms_db TO hrms_user;
+\q
+```
 
 ---
 
-## 📊 Core Modules
+### 2. Backend Setup
 
-### 🖥️ Dashboard
+```bash
+cd backend
 
-#### Employee Dashboard
-- Profile
-- Attendance
-- Leave Requests
-- Recent activity alerts
+# Copy and configure environment
+cp .env.example .env
+# Edit .env if needed (default works with the DB above)
 
-#### Admin Dashboard
-- Employee directory
-- Attendance records
-- Leave approval system
-- Payroll control access
+# Install dependencies
+npm install
 
----
+# Start server
+node src/index.js
+# Backend runs at http://localhost:5000
+```
 
-### 📁 Employee Profile Management
-
-Employees can view:
-- Personal details
-- Job details
-- Salary structure
-- Uploaded documents
-- Profile picture
-
-Editing Permissions:
-- Employees → Limited fields
-- Admin → Full access
+The backend **auto-creates tables and seeds demo data** on first run.
 
 ---
 
-### 🕒 Attendance Management
+### 3. Frontend Setup
 
-- Daily & weekly attendance views
-- Check-in / Check-out functionality
-- Attendance statuses:
-  - Present
-  - Absent
-  - Half-day
-  - Leave
+```bash
+cd frontend
 
-Access Control:
-- Employees → View own attendance
-- Admin → View all employee records
+# Install dependencies
+npm install
 
----
+# Create .env.local (optional, defaults to localhost:5000)
+echo "VITE_API_URL=http://localhost:5000/api" > .env.local
 
-### 📆 Leave & Time-Off Management
-
-#### Employee
-- Select leave type (Paid / Sick / Unpaid)
-- Choose date range
-- Add remarks
-- Track request status:
-  - Pending
-  - Approved
-  - Rejected
-
-#### Admin / HR
-- View all leave requests
-- Approve or reject with comments
-- Instant record updates
+# Start dev server
+npx vite
+# Frontend runs at http://localhost:5173
+```
 
 ---
 
-### 💰 Payroll Management
+## 🔐 Demo Credentials
 
-Employee:
-- Read-only salary view
+| Role       | Login ID / Email              | Password   |
+|------------|-------------------------------|------------|
+| **Admin**  | `admin@odooindia.com`         | `Admin@123`|
+| **HR**     | `hr@odooindia.com`            | `HR@12345` |
+| **Employee** | `john.doe@odooindia.com`    | `Pass@1234`|
+| **Employee** | `jane.smith@odooindia.com`  | `Pass@5678`|
 
-Admin:
-- View payroll data
-- Update salary structure
-- Maintain payroll accuracy
-
----
-
-## 🛠️ Tech Stack
-
-Frontend:
-- React.js
-- HTML5
-- CSS3
-- JavaScript
-
-State & Logic:
-- React Hooks
-- Role-based conditional rendering
-
-Concepts Applied:
-- RBAC (Role-Based Access Control)
-- Workflow-based approval system
-- Controlled data visibility
+> **Note:** The Sign Up page creates a new company + admin. Individual employees are created by Admin/HR from the Dashboard.
 
 ---
 
-## 🔗 System Flow Diagram
+## 📁 Project Structure
 
-Excalidraw Design:
-https://link.excalidraw.com/l/65VNwvy7c4X/58RLEJ4oOwh
+```
+dayflow-hrms/
+├── frontend/                    # React + TypeScript (Vite)
+│   └── src/
+│       ├── pages/
+│       │   ├── Auth.tsx          # Sign In / Sign Up
+│       │   ├── Dashboard.tsx     # Employee grid + Check In/Out
+│       │   ├── Profile.tsx       # Employee profile (Resume, Private Info, Salary, Security)
+│       │   ├── Attendance.tsx    # Daily attendance view
+│       │   ├── Leave.tsx         # Time-off management
+│       │   ├── Payroll.tsx       # Salary view
+│       │   ├── Reports.tsx       # Admin analytics
+│       │   └── Notifications.tsx
+│       ├── components/
+│       │   ├── layout/           # Header, Sidebar, Layout
+│       │   └── ui/               # shadcn/ui components
+│       ├── contexts/
+│       │   └── AuthContext.tsx   # JWT auth state
+│       └── lib/
+│           ├── api.ts            # All API calls
+│           └── utils.ts
+│
+├── backend/                     # Node.js + Express
+│   └── src/
+│       ├── db/
+│       │   ├── index.js          # Pool + auto-init + seed
+│       │   └── schema.sql        # PostgreSQL schema
+│       ├── middleware/
+│       │   └── auth.js           # JWT middleware
+│       ├── routes/
+│       │   ├── auth.js           # Sign in/up, me, change-password
+│       │   ├── employees.js      # CRUD employees
+│       │   ├── attendance.js     # Check-in/out, records
+│       │   ├── leave.js          # Leave requests + approvals
+│       │   ├── payroll.js        # Salary data
+│       │   ├── notifications.js  # User notifications
+│       │   └── reports.js        # Admin reports
+│       └── index.js              # Express app entry
+│
+└── scripts/
+    └── create_db.sql             # DB creation script
+```
 
 ---
 
-## 🎯 Key Highlights
+## ✅ Features
 
-- Role-based architecture
-- Structured HR workflows
-- Secure authentication system
-- Permission-controlled payroll visibility
-- Scalable system design
+### Authentication
+- [x] Sign In with Login ID or Email
+- [x] Sign Up (creates company + admin)
+- [x] Auto-generated employee Login IDs (`ABBR` + `Initials` + `Year` + `Serial`)
+- [x] Auto-generated passwords for new employees
+- [x] JWT-based session management
+- [x] Change password
+
+### Role-Based Access
+- [x] **Admin/HR**: Full access — create/edit employees, approve leave, view all attendance, salary management
+- [x] **Employee**: View own profile, attendance, apply leave, view own salary
+
+### Employee Management (Admin/HR)
+- [x] Employee card grid with status indicators (Present 🟢 / Leave ✈ / Absent 🟡)
+- [x] Add employee with auto-generated credentials
+- [x] Employee profile: Resume tab, Private Info tab, Salary Info tab (admin only), Security tab
+- [x] Edit profile (admin: all fields; employee: personal fields)
+- [x] Skills and certifications management
+
+### Attendance
+- [x] Check In / Check Out with live timer
+- [x] Work hours + extra hours calculation
+- [x] Admin: day-wise view of all employees
+- [x] Employee: personal monthly attendance with stats
+
+### Time-Off / Leave
+- [x] Apply for Paid Time Off, Sick Leave, Unpaid Leave
+- [x] Attachment support for sick leave
+- [x] Admin: approve/reject with comments
+- [x] Leave allocation management (admin can set limits)
+- [x] Approved leave auto-marks attendance as "leave"
+- [x] Employee sees only own leaves; Admin/HR see all
+
+### Payroll (Salary)
+- [x] Auto-calculated salary components from monthly wage:
+  - Basic (50%), HRA (50% of basic), Standard Allowance (16.67%)
+  - Performance Bonus (8.33%), LTA (8.33%), Fixed Allowance
+  - PF Employee/Employer (12% each), Professional Tax (₹200)
+- [x] Employee view: read-only
+- [x] Admin view: edit wage
+
+### Notifications
+- [x] Real-time notifications (polls every 30s)
+- [x] Leave request alerts for admin/HR
+- [x] Leave approval/rejection alerts for employee
+- [x] Mark as read / Mark all read
+
+### Reports (Admin/HR)
+- [x] Summary dashboard: total employees, present today, pending leaves
+- [x] Monthly attendance table
 
 ---
 
-## 🚀 Future Enhancements
+## 🔧 API Endpoints
 
-- Email & notification alerts
-- Analytics & reporting dashboard
-- Salary slip generation
-- Attendance performance insights
-- Cloud deployment
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/signin` | Sign in |
+| POST | `/api/auth/signup` | Register company + admin |
+| GET | `/api/auth/me` | Get current user |
+| PUT | `/api/auth/change-password` | Change password |
+| GET | `/api/employees` | List all employees |
+| GET | `/api/employees/:id` | Get employee |
+| POST | `/api/employees` | Create employee (admin) |
+| PUT | `/api/employees/:id` | Update employee |
+| DELETE | `/api/employees/:id` | Delete employee (admin) |
+| GET | `/api/attendance` | Get attendance records |
+| GET | `/api/attendance/today` | Today's record |
+| POST | `/api/attendance/checkin` | Check in |
+| POST | `/api/attendance/checkout` | Check out |
+| GET | `/api/leave` | Get leave requests |
+| POST | `/api/leave` | Create leave request |
+| PUT | `/api/leave/:id/status` | Approve/reject (admin) |
+| GET | `/api/leave/allocations` | Leave balance |
+| PUT | `/api/leave/allocations/:empId` | Update allocation (admin) |
+| GET | `/api/payroll` | Payroll data |
+| PUT | `/api/payroll/:empId` | Update wage (admin) |
+| GET | `/api/notifications` | Get notifications |
+| PUT | `/api/notifications/:id/read` | Mark read |
+| PUT | `/api/notifications/mark-all-read` | Mark all read |
+| GET | `/api/reports` | Reports summary (admin) |
 
 ---
 
-## 👤 Author
+## 🛡️ Security Notes
 
-Dhaval Prajapati  
-GitHub: https://github.com/Dhaval-0511  
-LinkedIn: https://linkedin.com/in/dhaval-prajapati-a62401292
+- Passwords hashed with bcrypt (cost factor 10)
+- JWT tokens expire in 7 days
+- Role-based middleware on all protected routes
+- Employees can only see their company's data
+- Change `JWT_SECRET` in `.env` for production
